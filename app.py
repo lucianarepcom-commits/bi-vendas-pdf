@@ -1,6 +1,7 @@
 import streamlit as st
 import pdfplumber
 import pandas as pd
+import re
 
 st.set_page_config(page_title="BI de Vendas", layout="wide")
 
@@ -16,7 +17,34 @@ uploaded_files = st.file_uploader(
 
 palavras_proibidas = ["ORÇAMENTO", "ORCAMENTO", "BONIFICAÇÃO", "BONIFICACAO"]
 
-dados = []
+dados_vendas = []
+
+def extrair_cliente(texto):
+    linhas = texto.split("\n")
+    for linha in linhas:
+        if "CLIENTE" in linha.upper():
+            return linha.strip()
+    return "Cliente não identificado"
+
+def extrair_itens(texto):
+    itens = []
+    linhas = texto.split("\n")
+
+    for linha in linhas:
+        # Exemplo simples: PRODUTO  10  25,90
+        numeros = re.findall(r"\d+,\d{2}", linha)
+        if numeros:
+            partes = linha.split()
+            if len(partes) >= 3:
+                produto = " ".join(partes[:-2])
+                quantidade = partes[-2]
+                valor = partes[-1]
+                itens.append({
+                    "Produto": produto,
+                    "Quantidade": quantidade,
+                    "Valor Unitário": valor
+                })
+    return itens
 
 if uploaded_files:
     for file in uploaded_files:
@@ -31,13 +59,20 @@ if uploaded_files:
             st.warning(f"⛔ {file.name} ignorado (Orçamento/Bonificação)")
             continue
 
-        dados.append({
-            "Arquivo": file.name,
-            "Texto (prévia)": texto[:300]
-        })
+        cliente = extrair_cliente(texto)
+        itens = extrair_itens(texto)
 
-    if dados:
-        df = pd.DataFrame(dados)
+        for item in itens:
+            dados_vendas.append({
+                "Arquivo": file.name,
+                "Cliente": cliente,
+                "Produto": item["Produto"],
+                "Quantidade": item["Quantidade"],
+                "Valor Unitário": item["Valor Unitário"]
+            })
 
-        st.success("✅ PDFs válidos importados com sucesso!")
+    if dados_vendas:
+        df = pd.DataFrame(dados_vendas)
+
+        st.success("✅ Dados extraídos com sucesso!")
         st.dataframe(df)
