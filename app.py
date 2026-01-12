@@ -167,5 +167,6 @@ else:
         df_filtro.groupby("Cliente")["Valor_Total"].sum().sort_values(ascending=False).head(10)
     )
 
+# FORCE REBUILD
 
 
