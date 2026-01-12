@@ -1,0 +1,84 @@
+!pip install pdfplumber
+
+
+import pdfplumber
+
+with pdfplumber.open("6586162005_12-01-2026_58.470.715_LTDA.pdf") as pdf:
+    for pagina in pdf.pages:
+        texto = pagina.extract_text()
+        print(texto)
+
+
+texto_pdf = texto
+
+if "CLIENTE" in texto_pdf:
+    print("Cliente encontrado no PDF")
+
+palavras_proibidas = ["ORÇAMENTO", "ORCAMENTO", "BONIFICAÇÃO", "BONIFICACAO"]
+
+texto_pdf_maiusculo = texto.upper()
+
+ignorar_pdf = False
+
+for palavra in palavras_proibidas:
+    if palavra in texto_pdf_maiusculo:
+        ignorar_pdf = True
+        print(f"⛔ PDF ignorado por conter a palavra: {palavra}")
+        break
+
+if ignorar_pdf:
+    print("❌ Este PDF NÃO será importado para o banco de dados.")
+else:
+    print("✅ PDF válido. Pode continuar com a IA e o banco.")
+
+!pip install streamlit pandas pdfplumber
+
+
+import streamlit as st
+import pdfplumber
+import pandas as pd
+
+st.set_page_config(page_title="BI de Vendas", layout="wide")
+
+st.title("📊 BI de Vendas - Importação de PDFs")
+
+st.write("Faça upload dos PDFs de vendas. PDFs com ORÇAMENTO ou BONIFICAÇÃO serão ignorados.")
+
+uploaded_files = st.file_uploader(
+    "Selecione os arquivos PDF",
+    type="pdf",
+    accept_multiple_files=True
+)
+
+palavras_proibidas = ["ORÇAMENTO", "ORCAMENTO", "BONIFICAÇÃO", "BONIFICACAO"]
+
+dados = []
+
+if uploaded_files:
+    for file in uploaded_files:
+        with pdfplumber.open(file) as pdf:
+            texto = ""
+            for page in pdf.pages:
+                texto += page.extract_text() or ""
+
+        texto_maiusculo = texto.upper()
+
+        if any(p in texto_maiusculo for p in palavras_proibidas):
+            st.warning(f"⛔ {file.name} ignorado (Orçamento/Bonificação)")
+            continue
+
+        # EXEMPLO SIMPLES (vamos melhorar com IA depois)
+        dados.append({
+            "Arquivo": file.name,
+            "Texto": texto[:300]  # só para teste visual
+        })
+
+    if dados:
+        df = pd.DataFrame(dados)
+
+        st.success("✅ PDFs válidos importados com sucesso!")
+
+        st.subheader("📄 Dados importados")
+        st.dataframe(df)
+
+
