@@ -24,29 +24,52 @@ def identificar_cliente(texto):
             return linha.replace("CLIENTE", "").strip()
     return "Cliente não identificado"
 
-def extrair_itens_tabela(pdf):
+def extrair_itens_por_texto(texto):
     itens = []
 
+    linhas = texto.split("\n")
+
+    for linha in linhas:
+        # Exemplo esperado:
+        # ARROZ TIPO 1  10  25,90  259,00
+        padrao = re.search(r"(.+?)\s+(\d+)\s+(\d+,\d{2})\s+(\d+,\d{2})", linha)
+
+        if padrao:
+            produto = padrao.group(1).strip()
+            quantidade = padrao.group(2)
+            valor_unit = padrao.group(3)
+            valor_final = padrao.group(4)
+
+            itens.append({
+                "Produto": produto,
+                "Quantidade": quantidade,
+                "Valor Unitário": valor_unit,
+                "Valor Final": valor_final
+            })
+
+    return itens
+
+def extrair_itens(pdf, texto):
+    itens = []
+
+    # 1️⃣ tenta como tabela
     for page in pdf.pages:
         tabelas = page.extract_tables()
-
         for tabela in tabelas:
             for linha in tabela:
-                if not linha or len(linha) < 4:
-                    continue
+                if linha and len(linha) >= 4:
+                    produto, quantidade, valor_unit, valor_final = linha[:4]
+                    if produto and quantidade and valor_final:
+                        itens.append({
+                            "Produto": str(produto).strip(),
+                            "Quantidade": quantidade,
+                            "Valor Unitário": valor_unit,
+                            "Valor Final": valor_final
+                        })
 
-                produto = linha[0]
-                quantidade = linha[1]
-                valor_unit = linha[2]
-                valor_final = linha[3]
-
-                if produto and re.search(r"\d", str(quantidade)):
-                    itens.append({
-                        "Produto": produto.strip(),
-                        "Quantidade": quantidade,
-                        "Valor Unitário": valor_unit,
-                        "Valor Final": valor_final
-                    })
+    # 2️⃣ se não encontrou nada, tenta por texto
+    if not itens:
+        itens = extrair_itens_por_texto(texto)
 
     return itens
 
@@ -66,17 +89,17 @@ if uploaded_files:
         cliente = identificar_cliente(texto_completo)
 
         with pdfplumber.open(file) as pdf:
-            itens = extrair_itens_tabela(pdf)
+            itens = extrair_itens(pdf, texto_completo)
 
         if not itens:
-            st.warning(f"⚠️ Nenhum item identificado em {file.name}")
+            st.error(f"❌ Não foi possível identificar itens em {file.name}")
             continue
 
         total_cliente = 0
 
         for item in itens:
             try:
-                valor_final = float(str(item["Valor Final"]).replace(".", "").replace(",", "."))
+                valor_final = float(item["Valor Final"].replace(".", "").replace(",", "."))
             except:
                 valor_final = 0
 
@@ -93,6 +116,10 @@ if uploaded_files:
 
     if linhas_bi:
         df = pd.DataFrame(linhas_bi)
+
+        st.success("✅ Dados extraídos com sucesso!")
+        st.dataframe(df, use_container_width=True)
+
 
         st.success("✅ Dados extraídos com sucesso!")
 
