@@ -1,23 +1,40 @@
 import streamlit as st
 import os
 import sqlite3
-from processar_pdf import processar_pdf
 import pandas as pd
+from processar_pdf import processar_pdf
 
 st.set_page_config(
     page_title="BI de Vendas",
     layout="wide"
 )
 
-st.title("📊 BI de Vendas - Importação de PDFs")
+# ================== TOPO ==================
+conn = sqlite3.connect("bi_vendas.db")
+cursor = conn.cursor()
 
-st.write("Faça upload dos PDFs de venda. Os dados serão salvos automaticamente no histórico.")
+cursor.execute("SELECT nome FROM representante LIMIT 1")
+rep = cursor.fetchone()
+representante_nome = rep[0] if rep else "Representante não identificado"
 
-# Pasta temporária para salvar PDFs
+st.markdown(
+    f"""
+    <div style='background-color:#f0f2f6;padding:15px;border-radius:10px'>
+        <h3>👤 Representante: {representante_nome}</h3>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.title("📊 BI de Vendas")
+
+st.write("Importe os PDFs de venda. O sistema ignora pedidos duplicados automaticamente.")
+
+# ================== UPLOAD ==================
 os.makedirs("pdfs", exist_ok=True)
 
 uploaded_files = st.file_uploader(
-    "Selecione os arquivos PDF",
+    "Selecionar arquivos PDF",
     type="pdf",
     accept_multiple_files=True
 )
@@ -28,61 +45,67 @@ if uploaded_files:
         with open(caminho, "wb") as f:
             f.write(file.read())
 
-        processar_pdf(caminho)
+        resultado = processar_pdf(caminho)
 
-    st.success("✅ PDFs processados e salvos com sucesso!")
+        if "já importado" in resultado:
+            st.warning(resultado)
+        elif "ignorado" in resultado:
+            st.info(resultado)
+        elif "sucesso" in resultado:
+            st.success(resultado)
+        else:
+            st.error(resultado)
 
-# ===== DASHBOARD =====
-
+# ================== DASHBOARD ==================
 st.divider()
 st.subheader("📈 Histórico de Vendas")
 
-conn = sqlite3.connect("bi_vendas.db")
-
-df_itens = pd.read_sql("""
+df = pd.read_sql("""
 SELECT
+    p.numero_pedido AS Pedido,
+    p.data AS Data,
     c.nome_cliente AS Cliente,
     i.codigo_produto AS Cod_Produto,
     i.nome_produto AS Produto,
     i.quantidade AS Quantidade,
-    i.valor_unit AS Valor_Unit,
-    i.valor_total AS Valor_Total,
-    p.data AS Data_Pedido
+    i.valor_unit AS Valor_Unitário,
+    i.valor_total AS Valor_Total
 FROM itens_pedido i
 JOIN pedidos p ON i.id_pedido = p.id_pedido
 JOIN clientes c ON p.codigo_cliente = c.codigo_cliente
+ORDER BY p.data DESC
 """, conn)
 
 conn.close()
 
-if not df_itens.empty:
+if df.empty:
+    st.info("Nenhum dado disponível. Faça upload de PDFs para começar.")
+else:
+    # ===== FILTROS =====
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Clientes Ativos", df_itens["Cliente"].nunique())
-    col2.metric("Produtos Vendidos", df_itens["Produto"].nunique())
-    col3.metric("Faturamento Total", f"R$ {df_itens['Valor_Total'].sum():,.2f}")
+    clientes = ["Todos"] + sorted(df["Cliente"].unique())
+    cliente_sel = col1.selectbox("Cliente", clientes)
 
-    st.subheader("📋 Detalhamento das Vendas")
-    st.dataframe(df_itens, use_container_width=True)
+    datas = ["Todas"] + sorted(df["Data"].unique(), reverse=True)
+    data_sel = col2.selectbox("Data", datas)
 
-    st.subheader("🏆 Top 10 Produtos Mais Vendidos")
-    top_prod = (
-        df_itens.groupby("Produto")["Quantidade"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-    )
-    st.bar_chart(top_prod)
+    produtos = ["Todos"] + sorted(df["Produto"].unique())
+    produto_sel = col3.selectbox("Produto", produtos)
 
-    st.subheader("🏆 Top 10 Clientes por Faturamento")
-    top_cli = (
-        df_itens.groupby("Cliente")["Valor_Total"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-    )
-    st.bar_chart(top_cli)
+    df_filtrado = df.copy()
 
-else:
-    st.info("Nenhum dado ainda. Faça upload de PDFs para iniciar.")
+    if cliente_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["Cliente"] == cliente_sel]
+
+    if data_sel != "Todas":
+        df_filtrado = df_filtrado[df_filtrado["Data"] == data_sel]
+
+    if produto_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["Produto"] == produto_sel]
+
+    # ===== KPIs =====
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Pedidos", df_filtrado_
+
 
