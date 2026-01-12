@@ -3,11 +3,10 @@ import sqlite3
 import re
 from datetime import datetime
 
-# Conexão com banco (arquivo será criado automaticamente)
 conn = sqlite3.connect("bi_vendas.db")
 cursor = conn.cursor()
 
-# Criar tabelas
+# ===== TABELAS =====
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS clientes (
     codigo_cliente TEXT PRIMARY KEY,
@@ -19,6 +18,7 @@ CREATE TABLE IF NOT EXISTS clientes (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS pedidos (
     id_pedido INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero_pedido TEXT,
     codigo_cliente TEXT,
     data TEXT,
     valor_total REAL
@@ -38,67 +38,76 @@ CREATE TABLE IF NOT EXISTS itens_pedido (
 
 conn.commit()
 
+# ===== FUNÇÃO PRINCIPAL =====
 def processar_pdf(caminho_pdf):
     with pdfplumber.open(caminho_pdf) as pdf:
-        texto = ""
-        for page in pdf.pages:
-            texto += page.extract_text() + "\n"
+        texto = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
-    # CLIENTE
-    cliente_match = re.search(r"(\d+)\s-\s(.+LTDA)", texto)
+    # IGNORAR ORÇAMENTO / BONIFICAÇÃO
+    texto_upper = texto.upper()
+    if "ORÇAMENTO" in texto_upper or "BONIFICAÇÃO" in texto_upper:
+        print("PDF ignorado (Orçamento/Bonificação)")
+        return
+
+    # ===== PEDIDO =====
+    pedido_match = re.search(r"Pedido.*?\n(\d+)", texto)
+    numero_pedido = pedido_match.group(1) if pedido_match else "N/A"
+
+    # ===== DATA =====
+    data_match = re.search(r"(\d{2}/\d{2}/\d{4})", texto)
+    data_pedido = data_match.group(1) if data_match else datetime.now().strftime("%d/%m/%Y")
+
+    # ===== CLIENTE =====
+    cliente_match = re.search(r"(\d+)\s-\s([A-Z0-9\s]+LTDA)", texto)
     if not cliente_match:
         print("Cliente não identificado")
         return
 
     codigo_cliente = cliente_match.group(1)
-    nome_cliente = cliente_match.group(2)
+    nome_cliente = cliente_match.group(2).strip()
+
+    cursor.execute(
+        "INSERT OR IGNORE INTO clientes VALUES (?, ?, ?)",
+        (codigo_cliente, nome_cliente, None)
+    )
+
+    # ===== TOTAL PEDIDO =====
+    total_match = re.search(r"Total Itens:\s([\d,]+)", texto)
+    valor_total_pedido = float(total_match.group(1).replace(".", "").replace(",", ".")) if total_match else 0
 
     cursor.execute("""
-    INSERT OR IGNORE INTO clientes VALUES (?, ?, ?)
-    """, (codigo_cliente, nome_cliente, None))
-
-    # TOTAL DO PEDIDO
-    total_match = re.search(r"Total Pedido:\s([\d,]+)", texto)
-    if not total_match:
-        print("Total do pedido não encontrado")
-        return
-
-    valor_total_pedido = float(total_match.group(1).replace(",", "."))
-
-    data_pedido = datetime.now().strftime("%Y-%m-%d")
-
-    cursor.execute("""
-    INSERT INTO pedidos (codigo_cliente, data, valor_total)
-    VALUES (?, ?, ?)
-    """, (codigo_cliente, data_pedido, valor_total_pedido))
+        INSERT INTO pedidos (numero_pedido, codigo_cliente, data, valor_total)
+        VALUES (?, ?, ?, ?)
+    """, (numero_pedido, codigo_cliente, data_pedido, valor_total_pedido))
 
     id_pedido = cursor.lastrowid
 
-    # PRODUTOS
+    # ===== PRODUTOS =====
     for linha in texto.split("\n"):
-        prod = re.search(r"(\d+)\s-\s(.+?)\s", linha)
-        if prod:
-            codigo_produto = prod.group(1)
-            nome_produto = prod.group(2)
+        produto_match = re.match(
+            r"(\d+)\s-\s(.+?)\s+\d+\s+(\d+)\s+([\d,]+)\s+0,00\s+\w+\s+\d+\s+([\d,]+)",
+            linha
+        )
 
-            numeros = re.findall(r"([\d,]+)", linha)
-            if len(numeros) >= 2:
-                valor_unit = float(numeros[-2].replace(",", "."))
-                valor_total = float(numeros[-1].replace(",", "."))
+        if produto_match:
+            codigo_produto = produto_match.group(1)
+            nome_produto = produto_match.group(2).strip()
+            quantidade = int(produto_match.group(3))
+            valor_unit = float(produto_match.group(4).replace(",", "."))
+            valor_total = float(produto_match.group(5).replace(",", "."))
 
-                quantidade = int(valor_total / valor_unit)
-
-                cursor.execute("""
+            cursor.execute("""
                 INSERT INTO itens_pedido
                 VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    id_pedido,
-                    codigo_produto,
-                    nome_produto,
-                    quantidade,
-                    valor_unit,
-                    valor_total
-                ))
+            """, (
+                id_pedido,
+                codigo_produto,
+                nome_produto,
+                quantidade,
+                valor_unit,
+                valor_total
+            ))
 
     conn.commit()
-    print("PDF processado com sucesso")
+    print("PDF processado corretamente")
+
