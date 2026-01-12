@@ -1,12 +1,20 @@
 import streamlit as st
-import pdfplumber
+import os
+import sqlite3
+from processar_pdf import processar_pdf
 import pandas as pd
-import re
 
-st.set_page_config(page_title="BI de Vendas", layout="wide")
+st.set_page_config(
+    page_title="BI de Vendas",
+    layout="wide"
+)
+
 st.title("📊 BI de Vendas - Importação de PDFs")
 
-st.write("Importe PDFs de vendas. Arquivos com ORÇAMENTO ou BONIFICAÇÃO serão ignorados.")
+st.write("Faça upload dos PDFs de venda. Os dados serão salvos automaticamente no histórico.")
+
+# Pasta temporária para salvar PDFs
+os.makedirs("pdfs", exist_ok=True)
 
 uploaded_files = st.file_uploader(
     "Selecione os arquivos PDF",
@@ -14,114 +22,67 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-palavras_proibidas = ["ORÇAMENTO", "ORCAMENTO", "BONIFICAÇÃO", "BONIFICACAO"]
-
-linhas_bi = []
-
-def identificar_cliente(texto):
-    for linha in texto.split("\n"):
-        if "CLIENTE" in linha.upper():
-            return linha.replace("CLIENTE", "").strip()
-    return "Cliente não identificado"
-
-def extrair_itens_por_texto(texto):
-    itens = []
-
-    linhas = texto.split("\n")
-
-    for linha in linhas:
-        # Exemplo esperado:
-        # ARROZ TIPO 1  10  25,90  259,00
-        padrao = re.search(r"(.+?)\s+(\d+)\s+(\d+,\d{2})\s+(\d+,\d{2})", linha)
-
-        if padrao:
-            produto = padrao.group(1).strip()
-            quantidade = padrao.group(2)
-            valor_unit = padrao.group(3)
-            valor_final = padrao.group(4)
-
-            itens.append({
-                "Produto": produto,
-                "Quantidade": quantidade,
-                "Valor Unitário": valor_unit,
-                "Valor Final": valor_final
-            })
-
-    return itens
-
-def extrair_itens(pdf, texto):
-    itens = []
-
-    # 1️⃣ tenta como tabela
-    for page in pdf.pages:
-        tabelas = page.extract_tables()
-        for tabela in tabelas:
-            for linha in tabela:
-                if linha and len(linha) >= 4:
-                    produto, quantidade, valor_unit, valor_final = linha[:4]
-                    if produto and quantidade and valor_final:
-                        itens.append({
-                            "Produto": str(produto).strip(),
-                            "Quantidade": quantidade,
-                            "Valor Unitário": valor_unit,
-                            "Valor Final": valor_final
-                        })
-
-    # 2️⃣ se não encontrou nada, tenta por texto
-    if not itens:
-        itens = extrair_itens_por_texto(texto)
-
-    return itens
-
 if uploaded_files:
     for file in uploaded_files:
-        with pdfplumber.open(file) as pdf:
-            texto_completo = ""
-            for page in pdf.pages:
-                texto_completo += page.extract_text() or ""
+        caminho = f"pdfs/{file.name}"
+        with open(caminho, "wb") as f:
+            f.write(file.read())
 
-        texto_maiusculo = texto_completo.upper()
+        processar_pdf(caminho)
 
-        if any(p in texto_maiusculo for p in palavras_proibidas):
-            st.warning(f"⛔ {file.name} ignorado (Orçamento/Bonificação)")
-            continue
+    st.success("✅ PDFs processados e salvos com sucesso!")
 
-        cliente = identificar_cliente(texto_completo)
+# ===== DASHBOARD =====
 
-        with pdfplumber.open(file) as pdf:
-            itens = extrair_itens(pdf, texto_completo)
+st.divider()
+st.subheader("📈 Histórico de Vendas")
 
-        if not itens:
-            st.error(f"❌ Não foi possível identificar itens em {file.name}")
-            continue
+conn = sqlite3.connect("bi_vendas.db")
 
-        total_cliente = 0
+df_itens = pd.read_sql("""
+SELECT
+    c.nome_cliente AS Cliente,
+    i.codigo_produto AS Cod_Produto,
+    i.nome_produto AS Produto,
+    i.quantidade AS Quantidade,
+    i.valor_unit AS Valor_Unit,
+    i.valor_total AS Valor_Total,
+    p.data AS Data_Pedido
+FROM itens_pedido i
+JOIN pedidos p ON i.id_pedido = p.id_pedido
+JOIN clientes c ON p.codigo_cliente = c.codigo_cliente
+""", conn)
 
-        for item in itens:
-            try:
-                valor_final = float(item["Valor Final"].replace(".", "").replace(",", "."))
-            except:
-                valor_final = 0
+conn.close()
 
-            total_cliente += valor_final
+if not df_itens.empty:
+    col1, col2, col3 = st.columns(3)
 
-            linhas_bi.append({
-                "Cliente": cliente,
-                "Produto": item["Produto"],
-                "Quantidade": item["Quantidade"],
-                "Valor Unitário": item["Valor Unitário"],
-                "Valor Final": valor_final,
-                "Total Cliente": total_cliente
-            })
+    col1.metric("Clientes Ativos", df_itens["Cliente"].nunique())
+    col2.metric("Produtos Vendidos", df_itens["Produto"].nunique())
+    col3.metric("Faturamento Total", f"R$ {df_itens['Valor_Total'].sum():,.2f}")
 
-    if linhas_bi:
-        df = pd.DataFrame(linhas_bi)
+    st.subheader("📋 Detalhamento das Vendas")
+    st.dataframe(df_itens, use_container_width=True)
 
-        st.success("✅ Dados extraídos com sucesso!")
-        st.dataframe(df, use_container_width=True)
+    st.subheader("🏆 Top 10 Produtos Mais Vendidos")
+    top_prod = (
+        df_itens.groupby("Produto")["Quantidade"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    st.bar_chart(top_prod)
 
+    st.subheader("🏆 Top 10 Clientes por Faturamento")
+    top_cli = (
+        df_itens.groupby("Cliente")["Valor_Total"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    st.bar_chart(top_cli)
 
-        st.success("✅ Dados extraídos com sucesso!")
+else:
+    st.info("Nenhum dado ainda. Faça upload de PDFs para iniciar.")
 
-        st.subheader("📋 Detalhamento por Cliente e Produto")
-        st.dataframe(df, use_container_width=True)
