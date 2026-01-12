@@ -92,4 +92,9 @@ if uploaded_files:
             })
 
     if linhas_bi:
-        d
+        df = pd.DataFrame(linhas_bi)
+
+        st.success("✅ Dados extraídos com sucesso!")
+
+        st.subheader("📋 Detalhamento por Cliente e Produto")
+        st.dataframe(df, use_container_width=True)
