@@ -4,10 +4,9 @@ import pandas as pd
 import re
 
 st.set_page_config(page_title="BI de Vendas", layout="wide")
-
 st.title("📊 BI de Vendas - Importação de PDFs")
 
-st.write("Faça upload dos PDFs de vendas. PDFs com ORÇAMENTO ou BONIFICAÇÃO serão ignorados.")
+st.write("Importe PDFs de vendas. Arquivos com ORÇAMENTO ou BONIFICAÇÃO serão ignorados.")
 
 uploaded_files = st.file_uploader(
     "Selecione os arquivos PDF",
@@ -17,62 +16,80 @@ uploaded_files = st.file_uploader(
 
 palavras_proibidas = ["ORÇAMENTO", "ORCAMENTO", "BONIFICAÇÃO", "BONIFICACAO"]
 
-dados_vendas = []
+linhas_bi = []
 
-def extrair_cliente(texto):
-    linhas = texto.split("\n")
-    for linha in linhas:
+def identificar_cliente(texto):
+    for linha in texto.split("\n"):
         if "CLIENTE" in linha.upper():
-            return linha.strip()
+            return linha.replace("CLIENTE", "").strip()
     return "Cliente não identificado"
 
-def extrair_itens(texto):
+def extrair_itens_tabela(pdf):
     itens = []
-    linhas = texto.split("\n")
 
-    for linha in linhas:
-        # Exemplo simples: PRODUTO  10  25,90
-        numeros = re.findall(r"\d+,\d{2}", linha)
-        if numeros:
-            partes = linha.split()
-            if len(partes) >= 3:
-                produto = " ".join(partes[:-2])
-                quantidade = partes[-2]
-                valor = partes[-1]
-                itens.append({
-                    "Produto": produto,
-                    "Quantidade": quantidade,
-                    "Valor Unitário": valor
-                })
+    for page in pdf.pages:
+        tabelas = page.extract_tables()
+
+        for tabela in tabelas:
+            for linha in tabela:
+                if not linha or len(linha) < 4:
+                    continue
+
+                produto = linha[0]
+                quantidade = linha[1]
+                valor_unit = linha[2]
+                valor_final = linha[3]
+
+                if produto and re.search(r"\d", str(quantidade)):
+                    itens.append({
+                        "Produto": produto.strip(),
+                        "Quantidade": quantidade,
+                        "Valor Unitário": valor_unit,
+                        "Valor Final": valor_final
+                    })
+
     return itens
 
 if uploaded_files:
     for file in uploaded_files:
         with pdfplumber.open(file) as pdf:
-            texto = ""
+            texto_completo = ""
             for page in pdf.pages:
-                texto += page.extract_text() or ""
+                texto_completo += page.extract_text() or ""
 
-        texto_maiusculo = texto.upper()
+        texto_maiusculo = texto_completo.upper()
 
         if any(p in texto_maiusculo for p in palavras_proibidas):
             st.warning(f"⛔ {file.name} ignorado (Orçamento/Bonificação)")
             continue
 
-        cliente = extrair_cliente(texto)
-        itens = extrair_itens(texto)
+        cliente = identificar_cliente(texto_completo)
+
+        with pdfplumber.open(file) as pdf:
+            itens = extrair_itens_tabela(pdf)
+
+        if not itens:
+            st.warning(f"⚠️ Nenhum item identificado em {file.name}")
+            continue
+
+        total_cliente = 0
 
         for item in itens:
-            dados_vendas.append({
-                "Arquivo": file.name,
+            try:
+                valor_final = float(str(item["Valor Final"]).replace(".", "").replace(",", "."))
+            except:
+                valor_final = 0
+
+            total_cliente += valor_final
+
+            linhas_bi.append({
                 "Cliente": cliente,
                 "Produto": item["Produto"],
                 "Quantidade": item["Quantidade"],
-                "Valor Unitário": item["Valor Unitário"]
+                "Valor Unitário": item["Valor Unitário"],
+                "Valor Final": valor_final,
+                "Total Cliente": total_cliente
             })
 
-    if dados_vendas:
-        df = pd.DataFrame(dados_vendas)
-
-        st.success("✅ Dados extraídos com sucesso!")
-        st.dataframe(df)
+    if linhas_bi:
+        d
