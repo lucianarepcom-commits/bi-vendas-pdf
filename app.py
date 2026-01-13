@@ -2,6 +2,7 @@ import streamlit as st
 import pdfplumber
 import pandas as pd
 import re
+from datetime import datetime
 
 # ===============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -60,13 +61,23 @@ if pdf_file:
     linhas = texto.split("\n")
 
     # ===============================
-    # PEDIDO
+    # PEDIDO (CORRIGIDO)
     # ===============================
     numero_pedido = ""
+    data_pedido = ""
+
     for linha in linhas:
-        if linha.strip().isdigit() and len(linha.strip()) >= 8:
-            numero_pedido = linha.strip()
+        match = re.search(r"(\d{8,})\s+\d+\s-\s", linha)
+        if match:
+            numero_pedido = match.group(1)
             break
+
+    # Data
+    data_match = re.search(r"(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})", texto)
+    if data_match:
+        data_pedido = data_match.group(1)
+    else:
+        data_pedido = datetime.now().strftime("%d/%m/%Y")
 
     # ===============================
     # CLIENTE
@@ -99,30 +110,5 @@ if pdf_file:
                 produtos.append({
                     "Código Produto": codigo,
                     "Produto": nome,
-                    "Quantidade": quantidade,
-                    "Valor Unitário (R$)": valor_unit,
-                    "Valor Total (R$)": valor_total
-                })
-            except:
-                pass
 
-    # ===============================
-    # EXIBIÇÃO
-    # ===============================
-    st.markdown("### 📄 Dados do Pedido")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Pedido", numero_pedido or "Não identificado")
-    col2.metric("Código do Cliente", codigo_cliente)
-    col3.metric("Cliente", nome_cliente)
-
-    if produtos:
-        df = pd.DataFrame(produtos)
-        st.markdown("### 🛒 Itens do Pedido")
-        st.dataframe(df, use_container_width=True)
-
-        st.markdown("### 💰 Resumo")
-        st.metric("Total do Pedido (R$)", f"{df['Valor Total (R$)'].sum():,.2f}")
-    else:
-        st.warning("Nenhum produto identificado.")
 
