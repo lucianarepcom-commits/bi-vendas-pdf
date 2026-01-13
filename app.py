@@ -3,6 +3,9 @@ import pdfplumber
 import pandas as pd
 import re
 
+# ===============================
+# CONFIGURAÇÃO DA PÁGINA
+# ===============================
 st.set_page_config(
     page_title="BI de Vendas - TAF Distribuidora",
     layout="wide"
@@ -44,8 +47,7 @@ st.markdown("""
 # UPLOAD
 # ===============================
 st.subheader("📥 Importar PDF de Venda")
-
-pdf_file = st.file_uploader("Selecione um PDF de venda", type=["pdf"])
+pdf_file = st.file_uploader("Selecione um PDF", type=["pdf"])
 
 if pdf_file:
     texto = ""
@@ -55,11 +57,72 @@ if pdf_file:
             if pagina.extract_text():
                 texto += pagina.extract_text() + "\n"
 
-    st.success("PDF lido com sucesso")
+    linhas = texto.split("\n")
 
     # ===============================
-    # MOSTRAR TEXTO (DIAGNÓSTICO)
+    # PEDIDO
     # ===============================
-    st.subheader("🔍 Texto extraído do PDF (diagnóstico)")
-    st.text(texto[:5000])  # mostra bastante texto
+    numero_pedido = ""
+    for linha in linhas:
+        if linha.strip().isdigit() and len(linha.strip()) >= 8:
+            numero_pedido = linha.strip()
+            break
+
+    # ===============================
+    # CLIENTE
+    # ===============================
+    codigo_cliente = ""
+    nome_cliente = ""
+
+    for linha in linhas:
+        if re.match(r"\d+\s-\s[A-Z]", linha):
+            partes = linha.split(" - ", 1)
+            codigo_cliente = partes[0].strip()
+            nome_cliente = partes[1].strip()
+            break
+
+    # ===============================
+    # PRODUTOS
+    # ===============================
+    produtos = []
+
+    for linha in linhas:
+        if re.match(r"\d+\s-\s", linha):
+            partes = linha.split()
+            try:
+                codigo = partes[0]
+                nome = " ".join(partes[2:-8])
+                quantidade = int(partes[-7])
+                valor_unit = float(partes[-6].replace(",", "."))
+                valor_total = float(partes[-1].replace(",", "."))
+
+                produtos.append({
+                    "Código Produto": codigo,
+                    "Produto": nome,
+                    "Quantidade": quantidade,
+                    "Valor Unitário (R$)": valor_unit,
+                    "Valor Total (R$)": valor_total
+                })
+            except:
+                pass
+
+    # ===============================
+    # EXIBIÇÃO
+    # ===============================
+    st.markdown("### 📄 Dados do Pedido")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Pedido", numero_pedido or "Não identificado")
+    col2.metric("Código do Cliente", codigo_cliente)
+    col3.metric("Cliente", nome_cliente)
+
+    if produtos:
+        df = pd.DataFrame(produtos)
+        st.markdown("### 🛒 Itens do Pedido")
+        st.dataframe(df, use_container_width=True)
+
+        st.markdown("### 💰 Resumo")
+        st.metric("Total do Pedido (R$)", f"{df['Valor Total (R$)'].sum():,.2f}")
+    else:
+        st.warning("Nenhum produto identificado.")
 
