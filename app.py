@@ -3,16 +3,13 @@ import pdfplumber
 import pandas as pd
 import re
 
-# ===============================
-# CONFIGURAÇÃO DA PÁGINA
-# ===============================
 st.set_page_config(
     page_title="BI de Vendas - TAF Distribuidora",
     layout="wide"
 )
 
 # ===============================
-# BARRA SUPERIOR (HEADER)
+# BARRA SUPERIOR
 # ===============================
 st.markdown("""
 <style>
@@ -44,14 +41,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===============================
-# UPLOAD DO PDF
+# UPLOAD
 # ===============================
 st.subheader("📥 Importar PDF de Venda")
 
-pdf_file = st.file_uploader(
-    "Selecione um PDF de venda",
-    type=["pdf"]
-)
+pdf_file = st.file_uploader("Selecione um PDF de venda", type=["pdf"])
 
 if pdf_file:
     texto = ""
@@ -61,7 +55,11 @@ if pdf_file:
             if pagina.extract_text():
                 texto += pagina.extract_text() + "\n"
 
+    st.success("PDF lido com sucesso")
+
     # ===============================
-    # DADOS DO PEDIDO
+    # MOSTRAR TEXTO (DIAGNÓSTICO)
     # ===============================
+    st.subheader("🔍 Texto extraído do PDF (diagnóstico)")
+    st.text(texto[:5000])  # mostra bastante texto
 
