@@ -1,10 +1,52 @@
 import streamlit as st
 import pdfplumber
+import pandas as pd
+import re
 
-st.set_page_config(page_title="BI de Vendas - PDF", layout="wide")
+# ===============================
+# CONFIGURAÇÃO DA PÁGINA
+# ===============================
+st.set_page_config(
+    page_title="BI de Vendas - TAF Distribuidora",
+    layout="wide"
+)
 
-st.title("📊 BI de Vendas (PDF)")
-st.write("Passo 3: Leitura do conteúdo do PDF")
+# ===============================
+# BARRA SUPERIOR (HEADER)
+# ===============================
+st.markdown("""
+<style>
+.header {
+    background-color: #0E2A47;
+    padding: 15px;
+    border-radius: 8px;
+    color: white;
+    margin-bottom: 20px;
+}
+.header-title {
+    font-size: 26px;
+    font-weight: bold;
+}
+.header-subtitle {
+    font-size: 16px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="header">
+    <div class="header-title">📊 BI de Vendas</div>
+    <div class="header-subtitle">
+        🏢 <b>Distribuidora:</b> TAF Distribuidora de Alimentos e Bebidas<br>
+        👤 <b>Representante:</b> Elu Representações
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ===============================
+# UPLOAD DO PDF
+# ===============================
+st.subheader("📥 Importar PDF de Venda")
 
 pdf_file = st.file_uploader(
     "Selecione um PDF de venda",
@@ -12,12 +54,14 @@ pdf_file = st.file_uploader(
 )
 
 if pdf_file:
-    texto_completo = ""
+    texto = ""
 
     with pdfplumber.open(pdf_file) as pdf:
         for pagina in pdf.pages:
             if pagina.extract_text():
-                texto_completo += pagina.extract_text() + "\n"
+                texto += pagina.extract_text() + "\n"
 
-    st.subheader("📄 Texto extraído do PDF")
-    st.text(texto_completo[:4000])  # mostra só o começo
+    # ===============================
+    # DADOS DO PEDIDO
+    # ===============================
+
