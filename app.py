@@ -61,7 +61,7 @@ if pdf_file:
     linhas = texto.split("\n")
 
     # ===============================
-    # PEDIDO (CORRIGIDO)
+    # PEDIDO
     # ===============================
     numero_pedido = ""
     data_pedido = ""
@@ -72,7 +72,6 @@ if pdf_file:
             numero_pedido = match.group(1)
             break
 
-    # Data
     data_match = re.search(r"(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})", texto)
     if data_match:
         data_pedido = data_match.group(1)
@@ -81,34 +80,5 @@ if pdf_file:
 
     # ===============================
     # CLIENTE
-    # ===============================
-    codigo_cliente = ""
-    nome_cliente = ""
-
-    for linha in linhas:
-        if re.match(r"\d+\s-\s[A-Z]", linha):
-            partes = linha.split(" - ", 1)
-            codigo_cliente = partes[0].strip()
-            nome_cliente = partes[1].strip()
-            break
-
-    # ===============================
-    # PRODUTOS
-    # ===============================
-    produtos = []
-
-    for linha in linhas:
-        if re.match(r"\d+\s-\s", linha):
-            partes = linha.split()
-            try:
-                codigo = partes[0]
-                nome = " ".join(partes[2:-8])
-                quantidade = int(partes[-7])
-                valor_unit = float(partes[-6].replace(",", "."))
-                valor_total = float(partes[-1].replace(",", "."))
-
-                produtos.append({
-                    "Código Produto": codigo,
-                    "Produto": nome,
-
+    # ===================
 
